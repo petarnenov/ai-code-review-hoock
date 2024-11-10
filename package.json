@@ -1,0 +1,16 @@
+{
+  "name": "ai-code-review-hook",
+  "version": "1.0.0",
+  "main": "./src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node ./src/index.js"
+  },
+  "keywords": [],
+  "author": "petar.nenov <petarnenovpetrov@gmail.com>",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "express": "^4.21.1"
+  }
+}
