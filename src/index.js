@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 
 let port = process.env.PROD_PORT || 80;
-if (process.env.NODE_EEV !== "production") {
+if (process.env.NODE_ENV !== "production") {
   port = process.env.DEV_PORT || 8080;
 }
 
