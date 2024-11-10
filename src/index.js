@@ -18,10 +18,8 @@ const router = express.Router();
 
 router.post("/webhook", (req, res) => {
   // Handle webhook POST request
-  const { event, payload, message } = req.body;
-  console.log("Event:", event);
-  console.log("Payload:", payload);
-  console.log("Message:", message);
+  const body = req.body;
+  console.log("Body:", body);
 
   res.status(200).json({ message: "Webhook received" });
 });
