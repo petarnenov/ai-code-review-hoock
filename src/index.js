@@ -7,6 +7,8 @@ if (process.env.NODE_ENV !== "production") {
   port = process.env.DEV_PORT || 8080;
 }
 
+console.log("process.env.NODE_ENV:", process.env.NODE_ENV);
+
 const app = express();
 
 app.use(cors());
