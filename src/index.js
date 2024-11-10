@@ -2,15 +2,11 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 
-let port = process.env.PROD_PORT || 80;
-if (process.env.NODE_ENV !== "production") {
-  port = process.env.DEV_PORT || 8080;
+let port = +process.env.WEBHOOK_PORT;
+if (isNaN(port) || port < 0 || port > 65535) {
+  console.error(`Invalid port number: ${port}. Using default port 3000.`);
+  port = 3000;
 }
-
-console.log("process.env.NODE_ENV:", process.env.NODE_ENV);
-console.log("process.env.PROD_PORT:", process.env.PROD_PORT);
-console.log("process.env.DEV_PORT:", process.env.DEV_PORT);
-console.log("port:", port);
 
 const app = express();
 
@@ -43,6 +39,6 @@ app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
-app.listen(8080, () => {
-  console.log("Server is running on port 8080");
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}...`);
 });
