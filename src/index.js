@@ -8,6 +8,9 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 console.log("process.env.NODE_ENV:", process.env.NODE_ENV);
+console.log("process.env.PROD_PORT:", process.env.PROD_PORT);
+console.log("process.env.DEV_PORT:", process.env.DEV_PORT);
+console.log("port:", port);
 
 const app = express();
 
