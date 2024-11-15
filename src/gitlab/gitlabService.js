@@ -3,6 +3,9 @@ import axios from "axios";
 import OpenAI from "openai";
 import { DEFAULT_OPEN_AI_REACT_PROMPT } from "./consts.js";
 
+import addLinesToDiff from "../utils/addLinesToDiff.js";
+import getFileContent from "../utils/getFileContent.js";
+
 const GITLAB_API_URL = "https://gitlab.com/api/v4";
 const GITLAB_TOKEN = process.env.GITLAB_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -39,15 +42,32 @@ async function getDiffsFromGitLab(projectId, mergeRequestIid) {
   }
 }
 
+async function getFile(projectId, filepath, branchName) {
+  try {
+    const response = await axios.get(
+      `${GITLAB_API_URL}/projects/${projectId}/repository/files/${encodeURIComponent(
+        filepath
+      )}/`,
+      {
+        headers: {
+          "PRIVATE-TOKEN": GITLAB_TOKEN,
+        },
+        params: {
+          ref: encodeURIComponent(branchName),
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching diffs from GitLab:", error);
+    throw error;
+  }
+}
+
 async function getCodeReviewFromOpenAI(diffs) {
   const prompt = DEFAULT_OPEN_AI_REACT_PROMPT;
 
-  const content = diffs
-    .map(
-      (diff) => `File: ${diff.new_path}
-${diff.diff}`
-    )
-    .join("\n\n");
+  const content = JSON.stringify(diffs);
 
   try {
     const response = await openai.chat.completions.create({
@@ -140,8 +160,8 @@ async function postComments(comment, projectId, mergeRequestIid, versions) {
   formData.append("position[head_sha]", versions?.[0].head_commit_sha);
   formData.append("position[start_sha]", versions?.[0].start_commit_sha);
   formData.append("position[new_path]", comment?.new_path);
-  formData.append("position[old_path]", comment?.old_path);
-  formData.append("position[new_line]", comment?.new_line);
+  formData.append("position[old_path]", comment?.old_path || comment?.new_path);
+  formData.append("position[new_line]", comment?.nln);
 
   formData.append(
     "body",
@@ -154,22 +174,47 @@ async function postComments(comment, projectId, mergeRequestIid, versions) {
       formData,
       {
         headers: {
-          "Content-Type": "multipart/form-data",
           "PRIVATE-TOKEN": GITLAB_TOKEN,
+          "Content-Type": "multipart/form-data",
         },
       }
     );
     console.log("Comment posted successfully to GitLab");
   } catch (error) {
-    console.error("Error posting comment to GitLab:", formData.entries());
+    console.warn("Error posting comment to GitLab:", comment);
+    console.error("Error posting comment to GitLab:", error);
     //throw error;
   }
 }
 
 async function postAllComments(comments, projectId, mergeRequestIid, versions) {
-  comments.forEach(async (comment) => {
-    await postComments(comment, projectId, mergeRequestIid, versions);
-  });
+  try {
+    return Promise.all(
+      comments.map(async (comment) => {
+        await postComments(comment, projectId, mergeRequestIid, versions);
+      })
+    );
+  } catch (error) {
+    console.error("Error posting all comments to GitLab:", error);
+    //throw error;
+  }
+}
+
+async function listMergeRequestDiffs(projectId, mergeRequestIid) {
+  try {
+    const response = await axios.get(
+      `${GITLAB_API_URL}/projects/${projectId}/merge_requests/${mergeRequestIid}/diffs`,
+      {
+        headers: {
+          "PRIVATE-TOKEN": GITLAB_TOKEN,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching merge request diffs:", error);
+    throw error;
+  }
 }
 
 async function processCodeReview() {
@@ -178,23 +223,49 @@ async function processCodeReview() {
 
   try {
     // 1. Get diffs from GitLab
-    const diffs = await getDiffsFromGitLab(projectId, mergeRequestIid);
+    const diffs = await listMergeRequestDiffs(projectId, mergeRequestIid);
     console.log("Diffs fetched successfully from GitLab");
-    // 2. Get code review from OpenAI
-    const review = await getCodeReviewFromOpenAI(diffs);
+    //2. Add line numbers to diffs
+    const diffsWithLineNumbers = addLinesToDiff(diffs);
+    console.log("Line numbers added successfully to diffs");
+    //3. Get file paths from the diffs
+    const filePaths = diffs.map((diff) => diff.new_path);
+    console.log("File paths fetched successfully from diffs");
+    //4. Get files from the file paths
+    const files = await Promise.all(
+      filePaths.map((filePath) => getFile(projectId, filePath, "add-contact"))
+    );
+    console.log("Files fetched successfully from GitLab");
+    //5. Get file contents from the files
+    const fileContents = files.map((file) => getFileContent(file));
+    console.log("File contents fetched successfully from files");
+    //6. Combine the file contents with the diffs
+    const combinedContent = fileContents.map(
+      (content, index) => `${content}\n\n\n${diffsWithLineNumbers[index]}`
+    );
+    console.log("Combined content fetched successfully");
+    //7. Get code review from OpenAI
+    const review = await getCodeReviewFromOpenAI(combinedContent);
     console.log("Code review fetched successfully from OpenAI");
-    // 3. Parse the code review from OpenAI
+    //8. Parse the code review from OpenAI
     const comments = parseJsonReviewString(review);
     console.log("Code review parsed successfully");
-    // 4. Get the versions of the merge request
+    //9. Get the versions of the merge request
     const versions = await getMergeRequestVersions(projectId, mergeRequestIid);
     console.log("Merge request versions fetched successfully");
-    // 5. Apply the comments to the merge request
-    //await postComments(comments[0], projectId, mergeRequestIid, versions);
+    //10. Apply the comments to the merge request
+    // if (comments && comments.length > 0) {
+    //   const res = await postComments(
+    //     comments[0],
+    //     projectId,
+    //     mergeRequestIid,
+    //     versions
+    //   );
+    //   console.log("Comments posted successfully to GitLab", res);
+    // }
     await postAllComments(comments, projectId, mergeRequestIid, versions);
-    console.log("Comments posted successfully to GitLab");
     console.log(
-      `Code review process completed successfully: Project(${projectId}), Merge Request(${mergeRequestIid})`
+      `Code review process completed successfully: Project(${projectId}), Merge Request(${mergeRequestIid}), Comments(${comments.length})`
     );
   } catch (error) {
     console.error("Error in code review process:", error);
